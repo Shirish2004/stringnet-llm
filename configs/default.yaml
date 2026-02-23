@@ -1,0 +1,24 @@
+seed: 7
+C_D: 0.1
+ubar_d: 3.0
+ubar_a: 2.0
+r_agent: 0.2
+dt: 0.05
+N_a: 5
+N_d: 3
+N_d_max: 5
+rho_ac_range: [0.6, 1.2]
+d_min: 0.15
+d_behind: 1.2
+T_max: 1000
+adapter_dim: 64
+adapter_lr: 0.0005
+adapter_epochs: 3
+adapter_batch_size: 16
+lambda_cat: 1.0
+lambda_cont: 0.1
+containment_margin_thresh: 0.0
+formation_error_thresh: 0.4
+T_fail: 8
+max_adapter_updates_per_episode: 3
+T_eval: 50
