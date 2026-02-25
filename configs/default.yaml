@@ -13,7 +13,7 @@ d_behind: 1.2
 T_max: 1000
 adapter_dim: 64
 adapter_lr: 0.0005
-adapter_epochs: 3
+adapter_epochs: 20
 adapter_batch_size: 16
 lambda_cat: 1.0
 lambda_cont: 0.1

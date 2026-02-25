@@ -19,21 +19,34 @@ class EnvState:
 class ShepherdEnv:
     """Minimal gym-like environment supporting reset/step with phase tracking."""
 
-    def __init__(self, config_path: str = "shepherd_codex/configs/default.yaml") -> None:
+    def __init__(self, config_path: str = "./configs/default.yaml") -> None:
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
-        self.rng = np.random.default_rng(self.config.get("seed", 0))
+        # self.rng = np.random.default_rng(self.config.get("seed", 0))
+        self.rng = np.random.default_rng(None)
         self.goal_region = np.array([[12.0, 8.0], [20.0, 12.0]])
+        self.goal_center = np.array([16.0, 10.0])
         self.state: EnvState | None = None
         self.t = 0
         self.current_phase = "seek"
+        self._ever_all_in_goal = False
 
     def reset(self, seed: int | None = None, config: dict | None = None) -> dict[str, Any]:
         """Reset environment; optional seed and config overrides."""
         if config:
             self.config.update(config)
-        if seed is not None:
-            self.rng = np.random.default_rng(seed)
+        # if seed is not None:
+        #     self.rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng(None)
+        # Randomize goal in quadrant 4 (x high, y low) within arena bounds.
+        goal_width, goal_height = 8.0, 4.0
+        x_center = self.rng.uniform(14.0, 16.0)
+        y_center = self.rng.uniform(2.0, 8.0)
+        self.goal_center = np.array([x_center, y_center])
+        self.goal_region = np.array([
+            [x_center - goal_width / 2, y_center - goal_height / 2],
+            [x_center + goal_width / 2, y_center + goal_height / 2],
+        ])
         na = int(self.config.get("N_a", 5))
         nd = int(self.config.get("N_d", 3))
         sheep_pos, center, radius = spawn_sheep(
@@ -50,18 +63,18 @@ class ShepherdEnv:
         )
         self.t = 0
         self.current_phase = "seek"
+        self._ever_all_in_goal = False
         return self.get_state() | {"r_ac": center, "rho_ac": radius}
 
     def get_state(self) -> dict[str, Any]:
         """Return a copy of the current observable state."""
         assert self.state is not None
-        goal_center = np.array([16.0, 10.0])
         return {
             "sheep_pos": self.state.sheep_pos.copy(),
             "sheep_vel": self.state.sheep_vel.copy(),
             "dog_pos": self.state.dog_pos.copy(),
             "dog_vel": self.state.dog_vel.copy(),
-            "goal": goal_center,
+            "goal": self.goal_center.copy(),
             "goal_region": self.goal_region.copy(),
             "dt": self.config["dt"],
             "r_agent": self.config["r_agent"],
@@ -92,12 +105,12 @@ class ShepherdEnv:
             dog_u, self.config["C_D"], self.config["ubar_d"], self.config["dt"],
         )
 
-        goal = np.array([16.0, 10.0])
+        goal = self.goal_center
         sheep_u = np.zeros((na, 2), dtype=float)
         for i in range(na):
-            to_goal = goal - self.state.sheep_pos[i]
-            if np.linalg.norm(to_goal) > 1e-8:
-                sheep_u[i] += 0.6 * to_goal / np.linalg.norm(to_goal)
+            # to_goal = goal - self.state.sheep_pos[i]
+            # if np.linalg.norm(to_goal) > 1e-8:
+            #     sheep_u[i] += 0.6 * to_goal / np.linalg.norm(to_goal)
             for d in self.state.dog_pos:
                 diff = self.state.sheep_pos[i] - d
                 dist = np.linalg.norm(diff)
@@ -122,7 +135,9 @@ class ShepherdEnv:
             & (obs["sheep_pos"][:, 1] >= self.goal_region[0, 1])
             & (obs["sheep_pos"][:, 1] <= self.goal_region[1, 1])
         )
-        done = bool(np.all(inside) or self.t >= int(self.config.get("T_max", 1000)))
+        if np.all(inside):
+            self._ever_all_in_goal = True
+        done = bool(self._ever_all_in_goal or self.t >= int(self.config.get("T_max", 1000)))
         rewards = {"team": float(np.mean(inside))}
         info = {"success": bool(np.all(inside)), "t": self.t, "in_goal": int(np.sum(inside))}
         return obs, rewards, done, info

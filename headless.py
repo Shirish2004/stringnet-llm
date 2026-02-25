@@ -145,8 +145,10 @@ def run_headless(
     seed: int = 42,
     max_steps: int = 300,
     capture_every: int = 10,
-    output_dir: str = "/mnt/user-data/outputs",
+    debug_every: int = 25,
+    output_dir: str = "outputs",
     qwen_model: str = "Qwen/Qwen3-0.6B",
+    speed_scale: float = 1.2,
 ) -> dict:
     """Run one headless episode; saves GIF/montage and metrics CSV."""
     out = Path(output_dir)
@@ -204,6 +206,8 @@ def run_headless(
         xi_des = _desired_positions(formation, n_d)
 
         phase = intent.get("phase", current_phase)
+        intent_speed = float(intent.get("params", {}).get("speed_scale", 1.0))
+        effective_speed = float(np.clip(speed_scale * intent_speed, 0.5, 2.5))
         acts: dict[int, np.ndarray] = {}
         for j in range(n_d):
             if phase == "seek":
@@ -212,9 +216,30 @@ def run_headless(
                 acts[j] = apply_enclosing_controller(j, formation, state, config)
             else:
                 acts[j] = apply_herding_controller(j, formation, state, config)
+            acts[j] = acts[j] * effective_speed
 
         state, _, done, info = env.step(acts)
         metrics = fd.step(state, xi_des, tokens)
+
+        if debug_every > 0 and step % debug_every == 0:
+            sheep_pos = np.round(state["sheep_pos"], 3)
+            dog_pos = np.round(state["dog_pos"], 3)
+            acom = np.round(np.mean(state["sheep_pos"], axis=0), 3)
+            dcom = np.round(np.mean(state["dog_pos"], axis=0), 3)
+            print(
+                f"\n[debug step={step}] phase={phase} source={intent.get('source', 'rule')} "
+                f"intent={intent.get('intent_token', '?')} speed={effective_speed:.2f}"
+            )
+            print(f"  sheep_pos: {sheep_pos}")
+            print(f"  dog_pos:   {dog_pos}")
+            print(f"  sheep_com: {acom} | dog_com: {dcom}")
+            print(f"  llm_out:   {intent}")
+            print(
+                "  metrics:  "
+                f"escape={metrics.get('escape_prob_est', 0):.3f} | "
+                f"formation_err={metrics.get('formation_error', 0):.3f} | "
+                f"containment={metrics.get('containment_margin', 0):.3f}"
+            )
 
         if mode == "llm" and planner is not None and oracle is not None:
             max_upd = config.get("max_adapter_updates_per_episode", 3)
@@ -280,9 +305,13 @@ if __name__ == "__main__":
     parser.add_argument("--n-dogs", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--steps", type=int, default=300)
-    parser.add_argument("--capture-every", type=int, default=10)
-    parser.add_argument("--qwen-model", default="Qwen/Qwen3-0.6B",
-                        help="HuggingFace model ID, e.g. Qwen/Qwen3-0.6B or Qwen/Qwen3-1.7B")
+    parser.add_argument("--capture-every", type=int, default=3)
+    parser.add_argument("--debug-every", type=int, default=1,
+                        help="Print debug info every N steps (0 to disable)")
+    parser.add_argument("--qwen-model", default="Qwen/Qwen2.5-7B-Instruct",
+                        help="HuggingFace model ID, e.g. Qwen/Qwen2.5-7B-Instruct or Qwen/Qwen3-1.7B")
+    parser.add_argument("--speed-scale", type=float, default=1.2,
+                        help="Global dog speed multiplier (combined with intent speed_scale)")
     args = parser.parse_args()
 
     print(f"\nRunning headless | mode={args.mode} | sheep={args.n_sheep} | dogs={args.n_dogs}")
@@ -295,6 +324,8 @@ if __name__ == "__main__":
         seed=args.seed,
         max_steps=args.steps,
         capture_every=args.capture_every,
+        debug_every=args.debug_every,
         qwen_model=args.qwen_model,
+        speed_scale=args.speed_scale,
     )
     print(f"\nFinal result: {result}")

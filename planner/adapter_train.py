@@ -7,15 +7,22 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 SCENE_DIM = 6
+
 DEFAULT_VOCAB = [
     "tighten_net", "widen_net", "flank_left", "flank_right",
     "split", "focus_largest_cluster", "delay_enclose",
     "increase_speed", "reduce_speed", "move_leader_to",
 ]
 
+STROMBOM_VOCAB = [
+    "tighten_collect", "loosen_collect", "push_harder", "back_off",
+    "spread_formation", "compress_formation", "speed_up", "slow_down",
+    "flank_left", "flank_right",
+]
+
 
 def scene_to_tensor(scene_tokens: dict) -> torch.Tensor:
-    """Encode symbolic scene tokens into a fixed-size float32 tensor."""
+    """Encode symbolic scene tokens into a fixed-size float32 tensor (shared by all modes)."""
     return torch.tensor([
         float(scene_tokens["ACoM"][0]),
         float(scene_tokens["ACoM"][1]),
@@ -33,7 +40,7 @@ def intent_to_idx(intent: dict, vocab: list[str]) -> int:
 
 
 class AdapterMLP(nn.Module):
-    """Trainable adapter: scene features -> intent-logit deltas."""
+    """Trainable adapter: scene features -> intent-logit deltas over a given vocabulary."""
 
     def __init__(self, in_dim: int, hidden: int, out_dim: int) -> None:
         super().__init__()
@@ -94,7 +101,7 @@ def train_adapter(
     batch_size: int = 16,
     device: torch.device | None = None,
 ) -> list[float]:
-    """Train adapter on replay buffer with AdamW + cosine LR; returns epoch losses."""
+    """Train adapter on replay buffer with AdamW + cosine LR; returns per-epoch losses."""
     if device is None:
         device = torch.device("cpu")
     if len(buffer) == 0:
