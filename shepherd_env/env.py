@@ -113,18 +113,51 @@ class ShepherdEnv:
             self.state.dog_pos, self.state.dog_vel,
             dog_u, self.config["C_D"], self.config["ubar_d"], self.config["dt"],
         )
+        sheep_u   = np.zeros((na, 2), dtype=float)
+        R_FLEE    = 2.0    # dog flee radius
+        R_REP     = 0.5    # sheep-sheep repulsion radius
+        R_ATT     = 3.0    # sheep-sheep cohesion radius
+        C_FLEE    = 0.9
+        C_REP     = 0.4
+        C_ATT     = 0.08
+        C_DRAG    = 0.05   # gentle drag toward flock centre
+        flock_com = self.state.sheep_pos.mean(axis=0)
 
         sheep_u = np.zeros((na, 2), dtype=float)
+        # for i in range(na):
+        #     # to_goal = goal - self.state.sheep_pos[i]
+        #     # if np.linalg.norm(to_goal) > 1e-8:
+        #     #     sheep_u[i] += 0.6 * to_goal / np.linalg.norm(to_goal)
+        #     for d in self.state.dog_pos:
+        #         diff = self.state.sheep_pos[i] - d
+        #         dist = np.linalg.norm(diff)
+        #         if 1e-6 < dist < 2.0:
+        #             sheep_u[i] += 0.8 * diff / (dist ** 2)
+
         for i in range(na):
-            # to_goal = goal - self.state.sheep_pos[i]
-            # if np.linalg.norm(to_goal) > 1e-8:
-            #     sheep_u[i] += 0.6 * to_goal / np.linalg.norm(to_goal)
+            # flee from dogs
             for d in self.state.dog_pos:
                 diff = self.state.sheep_pos[i] - d
-                dist = np.linalg.norm(diff)
-                if 1e-6 < dist < 2.0:
-                    sheep_u[i] += 0.8 * diff / (dist ** 2)
+                dist = float(np.linalg.norm(diff))
+                if 1e-6 < dist < R_FLEE:
+                    sheep_u[i] += C_FLEE * diff / (dist ** 2)
 
+            # inter-sheep repulsion + cohesion
+            for k in range(na):
+                if k == i:
+                    continue
+                diff = self.state.sheep_pos[i] - self.state.sheep_pos[k]
+                dist = float(np.linalg.norm(diff))
+                if 1e-6 < dist < R_REP:
+                    sheep_u[i] += C_REP * diff / (dist ** 2)       # push apart
+                elif R_REP <= dist < R_ATT:
+                    sheep_u[i] -= C_ATT * diff / dist              # pull together
+
+            # soft drag toward flock CoM (prevents long-range scatter)
+            to_com = flock_com - self.state.sheep_pos[i]
+            d_com  = float(np.linalg.norm(to_com))
+            if d_com > 1e-6:
+                sheep_u[i] += C_DRAG * to_com / d_com
         self.state.sheep_pos, self.state.sheep_vel = semi_implicit_euler_step(
             self.state.sheep_pos, self.state.sheep_vel,
             sheep_u, self.config["C_D"], self.config["ubar_a"], self.config["dt"],
