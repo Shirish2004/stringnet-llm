@@ -24,6 +24,7 @@ class ShepherdEnv:
             self.config = yaml.safe_load(f)
         # self.rng = np.random.default_rng(self.config.get("seed", 0))
         self.rng = np.random.default_rng(None)
+        self.arena_size = float(self.config.get("arena_size", 20.0))
         self.goal_region = np.array([[12.0, 8.0], [20.0, 12.0]])
         self.goal_center = np.array([16.0, 10.0])
         self.state: EnvState | None = None
@@ -35,13 +36,15 @@ class ShepherdEnv:
         """Reset environment; optional seed and config overrides."""
         if config:
             self.config.update(config)
+            self.arena_size = float(self.config.get("arena_size", self.arena_size))
         # if seed is not None:
         #     self.rng = np.random.default_rng(seed)
         self.rng = np.random.default_rng(None)
         # Randomize goal in quadrant 4 (x high, y low) within arena bounds.
-        goal_width, goal_height = 8.0, 4.0
-        x_center = self.rng.uniform(14.0, 16.0)
-        y_center = self.rng.uniform(2.0, 8.0)
+        arena = self.arena_size
+        goal_width, goal_height = 0.4 * arena, 0.2 * arena
+        x_center = self.rng.uniform(0.7 * arena, 0.9 * arena)
+        y_center = self.rng.uniform(0.1 * arena, 0.4 * arena)
         self.goal_center = np.array([x_center, y_center])
         self.goal_region = np.array([
             [x_center - goal_width / 2, y_center - goal_height / 2],
@@ -53,13 +56,18 @@ class ShepherdEnv:
             na, self.rng,
             tuple(self.config.get("rho_ac_range", [0.6, 1.2])),
             self.config.get("d_min", 0.15),
+            # self.arena_size
         )
-        dog_pos = spawn_dogs(nd, self.rng)
+        dog_pos = spawn_dogs(nd, 
+                             self.rng,
+                            #  self.arena_size
+                            )
         self.state = EnvState(
             sheep_pos=sheep_pos,
             sheep_vel=np.zeros((na, 2), dtype=float),
             dog_pos=dog_pos,
             dog_vel=np.zeros((nd, 2), dtype=float),
+            
         )
         self.t = 0
         self.current_phase = "seek"
@@ -76,6 +84,7 @@ class ShepherdEnv:
             "dog_vel": self.state.dog_vel.copy(),
             "goal": self.goal_center.copy(),
             "goal_region": self.goal_region.copy(),
+            "arena_size": self.arena_size,
             "dt": self.config["dt"],
             "r_agent": self.config["r_agent"],
             "phase": self.current_phase,
@@ -105,7 +114,6 @@ class ShepherdEnv:
             dog_u, self.config["C_D"], self.config["ubar_d"], self.config["dt"],
         )
 
-        goal = self.goal_center
         sheep_u = np.zeros((na, 2), dtype=float)
         for i in range(na):
             # to_goal = goal - self.state.sheep_pos[i]
@@ -121,8 +129,12 @@ class ShepherdEnv:
             self.state.sheep_pos, self.state.sheep_vel,
             sheep_u, self.config["C_D"], self.config["ubar_a"], self.config["dt"],
         )
-        self.state.sheep_pos = np.clip(self.state.sheep_pos, [0, 0], [20, 20])
-        self.state.dog_pos = np.clip(self.state.dog_pos, [0, 0], [20, 20])
+        self.state.sheep_pos = np.clip(
+            self.state.sheep_pos, [0, 0], [self.arena_size, self.arena_size]
+        )
+        self.state.dog_pos = np.clip(
+            self.state.dog_pos, [0, 0], [self.arena_size, self.arena_size]
+        )
         self.t += 1
 
         obs = self.get_state()

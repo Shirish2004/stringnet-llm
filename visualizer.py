@@ -29,8 +29,9 @@ MODE_META = {
 class HerdingVisualizer:
     """Live matplotlib figure with arena, formation overlay, and metrics panel for all 4 modes."""
 
-    def __init__(self, mode: str = "stringnet", figsize: tuple = (15, 7)) -> None:
+    def __init__(self, mode: str = "stringnet", figsize: tuple = (15, 7), arena_size: float = 20.0) -> None:
         self.mode = mode
+        self.arena_size = float(arena_size)
         self.fig = plt.figure(figsize=figsize, facecolor="#1a1a2e")
         self.fig.canvas.manager.set_window_title(f"Herding Simulation — {MODE_META.get(mode, {}).get('label', mode)}")
         gs = self.fig.add_gridspec(2, 3, width_ratios=[2, 1, 1], hspace=0.38, wspace=0.32,
@@ -68,21 +69,26 @@ class HerdingVisualizer:
         """Configure the main 20x20 arena axis with default goal patch."""
         ax = self.ax_arena
         ax.set_facecolor("#0d0d1a")
-        ax.set_xlim(-0.5, 20.5)
-        ax.set_ylim(-0.5, 20.5)
+        pad = 0.5
+        ax.set_xlim(-pad, self.arena_size + pad)
+        ax.set_ylim(-pad, self.arena_size + pad)
         ax.set_aspect("equal")
         ax.set_title("Arena", color="white", fontsize=11, pad=4)
         for sp in ax.spines.values():
             sp.set_edgecolor("#444466")
         ax.tick_params(colors="#888899", labelsize=7)
 
+        goal_w, goal_h = 0.4 * self.arena_size, 0.2 * self.arena_size
+        goal_x = 0.7 * self.arena_size - goal_w / 2
+        goal_y = 0.1 * self.arena_size - goal_h / 2
         self._goal_patch = patches.FancyBboxPatch(
-            (10.0, 6.0), 8.0, 4.0,
+            (goal_x, goal_y), goal_w, goal_h,
             boxstyle="round,pad=0.1", linewidth=1.5,
             edgecolor=GOAL_COLOR, facecolor="#1a3a1a", alpha=0.6, zorder=1,
         )
         ax.add_patch(self._goal_patch)
-        self._goal_text = ax.text(14.0, 8.0, "GOAL", ha="center", va="center",
+        self._goal_text = ax.text(goal_x + goal_w / 2, goal_y + goal_h / 2, "GOAL",
+                                  ha="center", va="center",
                                   color=GOAL_COLOR, fontsize=9, fontweight="bold", zorder=2)
 
         self._phase_text = ax.text(0.02, 0.97, "Phase: —", transform=ax.transAxes,
